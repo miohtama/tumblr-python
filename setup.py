@@ -6,7 +6,7 @@ setup(
     author='Devin Sevilla',
     author_email='dasevilla@gmail.com',
     maintainer='Pedro Rodrigues',
-    maintainer_email='medecau@gmail.com'
+    maintainer_email='medecau@gmail.com',
     url='https://github.com/medecau/tumblr-python',
     description=("Python Client for accessing the Tumblr API"),
     license="Apache License, Version 2.0",
