@@ -2,7 +2,13 @@ import json
 import logging
 import oauth2 as oauth
 import urllib
+import urllib2
 import urlparse
+
+from poster.encode import multipart_encode
+from poster.streaminghttp import register_openers
+
+register_openers()
 
 
 class TumblrClient(object):
@@ -70,7 +76,7 @@ class TumblrClient(object):
 
         return json_response
 
-    def make_oauth_request(self, request_url, method='GET', body=None):
+    def make_oauth_request(self, request_url, method='GET', body=None, headers=None):
         if not self.consumer or not self.token:
             logging.error('Missing OAuth credentials')
             return None
@@ -78,9 +84,9 @@ class TumblrClient(object):
         oauth_client = oauth.Client(self.consumer, self.token)
         if body:
             response, content = oauth_client.request(request_url, method,
-                body)
+                body, headers=headers)
         else:
-            response, content = oauth_client.request(request_url, method)
+            response, content = oauth_client.request(request_url, method, headers=headers)
 
         try:
             json_response = json.loads(content)
@@ -90,6 +96,35 @@ class TumblrClient(object):
             return None
 
         return json_response
+
+    def make_oauth_binary_request(self, request_url, body, binary_body):
+        """
+        Create OAuth request with binary payload (image).
+
+        https://gist.github.com/raw/1242662/8d8c5fe8ef0f6e420c52625d47efd19cd2c4f503/photo2tumblr.py
+        """
+
+        req = oauth.Request.from_consumer_and_token(self.consumer,
+                                                 token=self.token,
+                                                 http_method="POST",
+                                                 http_url=request_url,
+                                                 parameters=body)
+
+        req.sign_request(oauth.SignatureMethod_HMAC_SHA1(), self.consumer, self.token)
+        compiled_postdata = req.to_postdata()
+        all_upload_params = urlparse.parse_qs(compiled_postdata, keep_blank_values=True)
+
+        for key, val in all_upload_params.iteritems():
+            all_upload_params[key] = val[0]
+
+        all_upload_params.update(binary_body)
+
+        datagen, headers = multipart_encode(all_upload_params)
+        request = urllib2.Request(request_url, datagen, headers)
+
+        respdata = urllib2.urlopen(request).read()
+
+        return respdata
 
     def get_blog_info(self):
         request_url = self.build_api_key_url(self.BLOG_URLS['info'])
@@ -147,6 +182,31 @@ class TumblrClient(object):
 
         return self.make_oauth_request(request_url, method='POST',
             body=urllib.urlencode(request_params))
+
+    def create_photo_post(self, image_path, request_params={}):
+        """
+        Helper function to deal with photo binary data.
+
+        :param image_path: FS path to the image payload
+        """
+        request_url = self.build_url(self.BLOG_URLS['post'])
+
+        params = request_params.copy()
+        binary_params = {}
+
+        # Read in image
+        f = open(image_path)
+
+        binary_params["data"] = f
+
+        if not "type" in params:
+            params["type"] = "photo"
+
+        ret = self.make_oauth_binary_request(request_url, body=params, binary_body=binary_params)
+
+        f.close()
+
+        return ret
 
     def edit_post(self, post_id, request_params={}):
         request_url = self.build_url(self.BLOG_URLS['edit'])
